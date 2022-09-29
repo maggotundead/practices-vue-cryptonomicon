@@ -141,7 +141,36 @@ export default {
 			graph: []
 		}
 	},
+	created() {
+		const tickersData = localStorage.getItem('cryptonomicon-list');
+
+		if (tickersData) {
+			this.tickers = JSON.parse(tickersData);
+			this.tickers.forEach(ticker => {
+				this.subscribeToUpdates(ticker.name);
+			})
+		}
+	},
 	methods: {
+		subscribeToUpdates(tickerName) {
+			setInterval(async () => {
+				const f = await fetch(
+					`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=861dbf05487b194053392cc9b25132dcebd0dd990e66c10ba35c19655c1b7c6a`
+				);
+				const data = await f.json();
+
+				// reactivity?
+				this.tickers.find( t => t.name === tickerName ).price =
+					data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+				// currentTicker.price = data.USD;
+
+				if ( this.selected?.name === tickerName ) {
+					this.graph.push(data.USD);
+				}
+			}, 5000);
+
+			this.ticker = '';
+		},
 		add() {
 			const currentTicker = {
 				name: this.ticker,
@@ -149,23 +178,27 @@ export default {
 			};
 			this.tickers.push(currentTicker);
 
-			setInterval(async () => {
-				const f = await fetch(
-					`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=861dbf05487b194053392cc9b25132dcebd0dd990e66c10ba35c19655c1b7c6a`
-				);
-				const data = await f.json();
+			localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
 
-				// reactivity?
-				this.tickers.find( t => t.name === currentTicker.name ).price =
-					data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-				// currentTicker.price = data.USD;
+			// setInterval(async () => {
+			// 	const f = await fetch(
+			// 		`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=861dbf05487b194053392cc9b25132dcebd0dd990e66c10ba35c19655c1b7c6a`
+			// 	);
+			// 	const data = await f.json();
 
-				if ( this.selected?.name === currentTicker.name ) {
-					this.graph.push(data.USD);
-				}
-			}, 5000);
+			// 	// reactivity?
+			// 	this.tickers.find( t => t.name === currentTicker.name ).price =
+			// 		data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+			// 	// currentTicker.price = data.USD;
 
-			this.ticker = '';
+			// 	if ( this.selected?.name === currentTicker.name ) {
+			// 		this.graph.push(data.USD);
+			// 	}
+			// }, 1000);
+
+			// this.ticker = '';
+
+			this.subscribeToUpdates(currentTicker.name);
 		},
 		select(ticker) {
 			this.selected = ticker;
