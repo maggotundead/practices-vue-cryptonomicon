@@ -71,17 +71,17 @@
 					</button>
 
 					<!-- <div>Filter: <input v-model="filter" @input=" filter = '' " /></div> -->
-					<div>Filter: <input v-model="filter" /></div>
+					<div>Filter: <input v-model="filter" @input=" page = 1 " /></div>
 				</div>
 
 				<hr class="w-full border-t border-gray-600 my-4" />
 
 				<dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
 					<div
-						v-for="item in filteredTickers()"
+						v-for="item in paginatedTickers"
 						:key="item"
 						@click="select(item)"
-						:class=" selected === item ? 'border-4' : '' "
+						:class=" selectedTicker === item ? 'border-4' : '' "
 						class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
 					>
 						<div class="px-4 py-5 sm:p-6 text-center">
@@ -105,19 +105,19 @@
 				<hr class="w-full border-t border-gray-600 my-4" />
 			</template>
 
-			<section class="relative" v-if="selected">
+			<section class="relative" v-if="selectedTicker">
 				<h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-					{{ selected.name }} - USD
+					{{ selectedTicker.name }} - USD
 				</h3>
 				<div class="flex items-end border-gray-600 border-b border-l h-64">
 					<div
-						v-for="(bar, idx) in normalizeGraph()"
+						v-for="(bar, idx) in normalizedGraph"
 						:key="idx"
 						:style="{ height: `${bar}%` }"
 						class="bg-purple-800 border w-10"
 					></div>
 				</div>
-				<button type="button" class="absolute top-0 right-0" @click=" selected = null ">
+				<button type="button" class="absolute top-0 right-0" @click=" selectedTicker = null ">
 					<svg width="30" height="30"><use xlink:href="#icon-close-round"></use></svg>
 				</button>
 			</section>
@@ -153,29 +153,55 @@
 </template>
 
 <script>
+// [х] 6. наличие в состоянии зависимых данных | crit: 5+
+// [] 4. запросы напрямую внутри компонента | crit: 5
+// [] 2. при удалении остаётся подписка на загрузку тикера | crit: 5
+// [] 5. обработка ошибок API | crit: 5
+// [] 3. количество запросов | crit: 4
+// [x] 8. при удалении тикера не измеяется localStorage | crit: 4
+// [x] 1. одинаковый код в watch | crit: 3
+// [] 9. localStorage и анонимные вкладки | crit: 3
+// [] 7. график ужасно выглядит если будет много цен | crit: 2
+// [] 10. магические строки и числа (URL, 5000ms задержки, ключ локального хранилища, количество на странице) | crit: 1
+//
+
+// Параллельно
+// [x] График сломан, если везде одинаковые значения
+// [x] При удалении тикера он остаётся выбранным
 
 export default {
 	name: 'App',
 	data() {
 		return {
 			ticker: '',
+			filter: '',
 			tickers: [],
-			selected: null,
+			selectedTicker: null,
 			graph: [],
 			page: 1,
-			filter: '',
-			hasNextPage: true,
+			// hasNextPage: true,
 		}
 	},
 	created() {
 		const windowData = Object.fromEntries( new URL(window.location).searchParams.entries() );
 
-		if (windowData.filter) {
-			this.filter = windowData.filter;
-		}
-		if (windowData.page) {
-			this.page = windowData.page;
-		}
+		// if (windowData.filter) {
+		// 	this.filter = windowData.filter;
+		// }
+		// if (windowData.page) {
+		// 	this.page = windowData.page;
+		// }
+
+		// Object.assign(this, windowData);
+
+		const validKeys = ['filter', 'page'];
+		validKeys.forEach( key => {
+			// if (windowData[key]) {
+			// 	this[key] = windowData[key];
+			// }
+
+			windowData[key] && ( this[key] = windowData[key] )
+		});
 
 		const tickersData = localStorage.getItem('cryptonomicon-list');
 
@@ -186,25 +212,62 @@ export default {
 			})
 		}
 	},
-	methods: {
-		filteredTickers() {
 
+	computed: {
+		startIndex() {
+			return ( this.page - 1 ) * 6;
+		},
+		endIndex() {
+			return this.page * 6;
+		},
+		filteredTickers() {
 			// 1 - 0, 5
 			// 2 - 6, 11
 			// (6 * (page - 1), 6* page - 1)
-			const start = (this.page - 1) * 6;
-			const end = this.page * 6;
-
+			// const start = (this.page - 1) * 6;
+			// const end = this.page * 6;
 
 			// return this.tickers.filter(ticker => ticker.name.includes(this.filter));
-			const filteredTickers = this.tickers.filter(ticker =>
-			ticker.name.includes(this.filter)
+			// const filteredTickers = this.tickers.filter(ticker =>
+			return this.tickers.filter(ticker =>
+				ticker.name.includes(this.filter)
 			);
 
-			this.hasNextPage = filteredTickers.length > end;
+			// this.hasNextPage = filteredTickers.length > end;
 
-			return filteredTickers.slice(start, end);
+			// return filteredTickers.slice(start, end);
 		},
+
+		paginatedTickers() {
+			return this.filteredTickers.slice(this.startIndex, this.endIndex);
+		},
+
+		hasNextPage() {
+			return this.filteredTickers.length > this.endIndex;
+		},
+
+		normalizedGraph() {
+			const maxValue = Math.max(...this.graph);
+			const minValue = Math.min(...this.graph);
+
+			if ( maxValue === minValue ) {
+				return this.graph.map( () => 50 );
+			}
+			return this.graph.map(
+				price => 10 + ((price -minValue) * 90) / (maxValue - minValue)
+			)
+		},
+
+		pageStateOptions() {
+			return {
+				filter: this.filter,
+				page: this.page,
+			}
+		}
+	},
+
+	methods: {
+
 		subscribeToUpdates(tickerName) {
 			setInterval(async () => {
 				const f = await fetch(
@@ -217,10 +280,10 @@ export default {
 					data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 				// currentTicker.price = data.USD;
 
-				if ( this.selected?.name === tickerName ) {
+				if ( this.selectedTicker?.name === tickerName ) {
 					this.graph.push(data.USD);
 				}
-			}, 15000);
+			}, 30000);
 
 			this.ticker = '';
 		},
@@ -230,9 +293,10 @@ export default {
 				price: '-'
 			};
 
-			this.tickers.push(currentTicker);
+			// this.tickers.push(currentTicker);
+			this.tickers = [...this.tickers, currentTicker];
 
-			localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
+			// localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
 
 			// setInterval(async () => {
 			// 	const f = await fetch(
@@ -245,7 +309,7 @@ export default {
 			// 		data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 			// 	// currentTicker.price = data.USD;
 
-			// 	if ( this.selected?.name === currentTicker.name ) {
+			// 	if ( this.selectedTicker?.name === currentTicker.name ) {
 			// 		this.graph.push(data.USD);
 			// 	}
 			// }, 1000);
@@ -256,38 +320,67 @@ export default {
 			this.filter = '';
 		},
 		select(ticker) {
-			this.selected = ticker;
-			this.graph = [];
+			this.selectedTicker = ticker;
+			// this.graph = [];
 		},
 		handleDelete(tickerToRemove) {
 			this.tickers = this.tickers.filter( item => item != tickerToRemove );
+
+			// if ( this.paginatedTickers.length === 0 && this.page > 1 ) {
+			// 	this.page -= 1;
+			// }
+
+			if ( this.selectedTicker === tickerToRemove ) {
+				this.selectedTicker = null;
+			}
 		},
-		normalizeGraph() {
-			const maxValue = Math.max(...this.graph);
-			const minValue = Math.min(...this.graph);
-			return this.graph.map(
-				price => 10 + ((price -minValue) * 90) / (maxValue - minValue)
-			)
-		},
+
 
 	},
 	watch: {
+		selectedTicker() {
+			this.graph = [];
+		},
+
+		tickers(newValue, oldValue) {
+			// Почему не сработал watch при добавлении?
+			console.log( newValue === oldValue );
+			console.log( newValue.length === oldValue.length );
+
+			localStorage.setItem( 'cryptonomicon-list', JSON.stringify(this.tickers) );
+
+		},
+
+		paginatedTickers() {
+			if ( this.paginatedTickers.length === 0 && this.page > 1 ) {
+				this.page -= 1;
+			}
+		},
+
 		filter() {
 			this.page = 1;
 
 			// const currentURL = new URL(window.location);
 			// const { protocol, host, pathname } = window.location;
-			window.history.pushState(
-				null,
-				document.title,
-				`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
-			);
+
+			// window.history.pushState(
+			// 	null,
+			// 	document.title,
+			// 	`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+			// );
 		},
-		page() {
+		// page() {
+		// 	window.history.pushState(
+		// 		null,
+		// 		document.title,
+		// 		`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+		// 	);
+		// }
+		pageStateOptions(value) {
 			window.history.pushState(
 				null,
 				document.title,
-				`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+				`${window.location.pathname}?filter=${value.filter}&page=${value.page}`
 			);
 		}
 	}
